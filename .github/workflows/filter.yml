@@ -1,0 +1,69 @@
+name: Filter subs
+
+on:
+  workflow_dispatch:
+    inputs:
+      sub_urls:
+        description: "Comma-separated sub URLs (blank = default)"
+        required: false
+        default: ""
+  schedule:
+    - cron: "0 3 * * *"
+  push:
+    paths:
+      - "filter/filter.sh"
+      - ".github/workflows/filter.yml"
+
+concurrency:
+  group: filter-subs
+  cancel-in-progress: false
+
+jobs:
+  filter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Strip CR from script
+        run: sed -i 's/\r$//' filter/filter.sh || true
+
+      - name: Run filter
+        env:
+          SUB_URLS: ${{ github.event.inputs.sub_urls }}
+          OUT_FILE: subs.txt
+          PARALLEL_TCP: "32"
+          PARALLEL_HTTP: "10"
+          PARALLEL_SPEED: "4"
+          STAGE2_SAMPLE: "300"
+        run: |
+          chmod +x filter/filter.sh
+          bash filter/filter.sh
+
+      - name: Summary
+        if: always()
+        run: |
+          COUNT=$([ -f subs.txt ] && wc -l < subs.txt || echo 0)
+          echo "## Filter result" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Configs in subs.txt: **$COUNT**" >> $GITHUB_STEP_SUMMARY
+
+      - name: Commit subs.txt
+        if: always()
+        run: |
+          if [ ! -f subs.txt ]; then echo "subs.txt missing"; exit 0; fi
+          COUNT=$(wc -l < subs.txt)
+          if [ "$COUNT" -eq 0 ]; then echo "Empty; skip commit"; exit 0; fi
+          git config user.name "v2filter-bot"
+          git config user.email "v2filter@localhost"
+          git add subs.txt
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "auto: update subs.txt ($(date -u +%Y-%m-%dT%H:%MZ), ${COUNT} configs)"
+            git push origin HEAD:main || (git pull --rebase --no-edit && git push origin HEAD:main)
+          fi

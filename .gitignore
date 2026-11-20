@@ -1,0 +1,13 @@
+*.log
+tmp/
+xray
+xray.zip
+raw_all.txt
+configs.txt
+unique.txt
+stage1.txt
+stage2.txt
+stage2_in.txt
+stage2_lines.txt
+stage2_num.txt
+best.txt
